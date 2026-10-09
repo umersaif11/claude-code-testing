@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Solar PV Roof Planner</title>
+  <meta name="description" content="Size a rooftop solar PV system, place panels on the roof and export an HD layout image for clients.">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="Inputs">
+      <header class="brand">
+        <h1>Solar PV Roof Planner</h1>
+        <p>Find the roof, outline it, and the panels are placed for you.</p>
+      </header>
+
+      <section class="step">
+        <h2><span class="num">1</span> Location</h2>
+        <label for="coords">Roof coordinates</label>
+        <div class="row">
+          <input id="coords" type="text" placeholder="31.5204, 74.3587" autocomplete="off">
+          <button id="go-coords" class="btn">Go</button>
+        </div>
+        <p class="hint">Decimal, degrees-minutes-seconds or a Google Maps link all work.</p>
+        <label for="city">City</label>
+        <div class="row">
+          <input id="city" type="text" list="city-list" placeholder="Lahore" autocomplete="off">
+          <button id="go-city" class="btn">Go</button>
+        </div>
+        <datalist id="city-list"></datalist>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">2</span> Roof</h2>
+        <div class="row wrap">
+          <button id="draw-roof" class="btn primary">Draw roof</button>
+          <button id="detect-roof" class="btn">Detect outline</button>
+          <button id="draw-obstacle" class="btn">Add obstruction</button>
+        </div>
+        <p class="hint">Click each corner of the roof on the map, then click the first point to close it. Drag the corner dots to adjust. Mark water tanks, stair rooms and other things the panels must avoid with <b>Add obstruction</b>.</p>
+        <ul id="roof-list" class="item-list"></ul>
+        <div class="row">
+          <button id="undo" class="btn small">Undo last</button>
+          <button id="clear-all" class="btn small danger">Clear all</button>
+        </div>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">3</span> Panels</h2>
+        <div class="grid2">
+          <div>
+            <label for="wattage">Panel wattage (W)</label>
+            <input id="wattage" type="number" min="100" max="1000" step="5" value="580" list="watt-list">
+            <datalist id="watt-list">
+              <option value="450"><option value="550"><option value="580"><option value="585">
+              <option value="600"><option value="620"><option value="650"><option value="700">
+            </datalist>
+          </div>
+          <div>
+            <label for="orientation">Orientation</label>
+            <select id="orientation">
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </div>
+          <div>
+            <label for="panel-length">Length (mm)</label>
+            <input id="panel-length" type="number" min="500" max="3000" step="1" value="2278">
+          </div>
+          <div>
+            <label for="panel-width">Width (mm)</label>
+            <input id="panel-width" type="number" min="500" max="2000" step="1" value="1134">
+          </div>
+        </div>
+        <p class="hint" id="module-hint"></p>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">4</span> Mounting</h2>
+        <div class="grid2">
+          <div class="span2">
+            <label for="mounting">Roof type</label>
+            <select id="mounting">
+              <option value="tilted">Flat roof, tilted structures</option>
+              <option value="flush">Sloped roof, flush mounted</option>
+            </select>
+          </div>
+          <div>
+            <label for="tilt">Tilt (°)</label>
+            <input id="tilt" type="number" min="0" max="60" step="1" value="20">
+          </div>
+          <div>
+            <label for="azimuth-mode">Panels face</label>
+            <select id="azimuth-mode">
+              <option value="auto">Auto (match building)</option>
+              <option value="manual">Set direction</option>
+            </select>
+          </div>
+          <div id="azimuth-wrap" hidden>
+            <label for="azimuth">Facing (° from N)</label>
+            <input id="azimuth" type="number" min="0" max="359" step="1" value="180">
+          </div>
+          <div class="tilted-only">
+            <label for="rows-per-table">Panels per structure (deep)</label>
+            <select id="rows-per-table">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </div>
+          <div>
+            <label for="setback">Edge setback (m)</label>
+            <input id="setback" type="number" min="0" max="5" step="0.1" value="0.6">
+          </div>
+          <div>
+            <label for="clearance">Obstruction clearance (m)</label>
+            <input id="clearance" type="number" min="0" max="5" step="0.1" value="0.5">
+          </div>
+          <div class="tilted-only">
+            <label for="row-gap">Row gap (m)</label>
+            <input id="row-gap" type="number" min="0" max="10" step="0.05" placeholder="auto">
+          </div>
+          <div>
+            <label for="pr">Performance ratio</label>
+            <input id="pr" type="number" min="0.5" max="0.95" step="0.01" value="0.77">
+          </div>
+        </div>
+        <p class="hint" id="mount-hint"></p>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">5</span> Client image</h2>
+        <label for="project">Project / client name</label>
+        <input id="project" type="text" placeholder="e.g. Mr. Ahmed Residence">
+        <label for="prepared-by">Prepared by (optional)</label>
+        <input id="prepared-by" type="text" placeholder="Your company">
+        <label for="detail">Imagery detail</label>
+        <select id="detail">
+          <option value="19">Standard (works everywhere)</option>
+          <option value="20">Sharper (big cities only)</option>
+        </select>
+      </section>
+
+      <footer class="foot">
+        Estimates use NASA POWER sunlight data when online, otherwise built-in city averages. Check shading and structure on site before quoting.
+      </footer>
+    </aside>
+
+    <main class="map-wrap">
+      <div id="map" role="application" aria-label="Satellite map"></div>
+      <div id="draw-banner" class="banner" hidden>
+        <span id="draw-text"></span>
+        <button id="draw-finish" class="btn small primary">Finish</button>
+        <button id="draw-cancel" class="btn small">Cancel</button>
+      </div>
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+      <section class="results" aria-label="Results">
+        <div class="kpi hero">
+          <div class="label">System size</div>
+          <div class="value"><span id="r-kwp">0</span><small>kWp</small></div>
+        </div>
+        <div class="kpi">
+          <div class="label">Panels</div>
+          <div class="value" id="r-count">0</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Yearly generation</div>
+          <div class="value"><span id="r-kwh">0</span><small>kWh</small></div>
+        </div>
+        <div class="kpi">
+          <div class="label">Specific yield</div>
+          <div class="value"><span id="r-yield">0</span><small>kWh/kWp</small></div>
+        </div>
+        <div class="results-actions">
+          <button id="export" class="btn primary">Export HD image</button>
+          <div class="source" id="r-source"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header>
+        <h2 id="modal-title">Client image</h2>
+        <button id="modal-close" class="btn small" aria-label="Close">Close</button>
+      </header>
+      <div id="modal-body" class="modal-body"></div>
+      <footer>
+        <a id="download" class="btn primary" download hidden>Download PNG (3840 × 2160)</a>
+      </footer>
+    </div>
+  </div>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/energy.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
