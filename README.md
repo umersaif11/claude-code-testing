@@ -64,5 +64,6 @@ js/energy.js      module sizes, city data, yield model
 js/export.js      4K client image renderer
 js/app.js         map, drawing and UI
 vendor/leaflet/   Leaflet 1.9.4 map library (BSD-2-Clause)
-tests/            unit tests: npm test
+tests/            unit tests (npm test) and browser test (npm run test:e2e)
+CLAUDE.md         notes for Claude Code when changing this project
 ```

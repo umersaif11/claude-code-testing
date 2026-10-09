@@ -5,7 +5,11 @@
   "description": "Size a rooftop solar PV system, place panels on the roof and export an HD layout image for clients.",
   "scripts": {
     "start": "python3 -m http.server 8080",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "node tests/e2e.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "1.64.0"
+  }
 }
