@@ -1,0 +1,13 @@
+{
+  "name": "ielts-reading-lab",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted IELTS Academic reading practice. Import your own practice-test PDFs.",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "parse": "node tools/parse-cli.mjs"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "4.10.38"
+  }
+}
