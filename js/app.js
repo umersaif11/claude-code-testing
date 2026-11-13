@@ -16,13 +16,17 @@ const fmtDate = (t) => new Date(t).toLocaleString(undefined, { dateStyle: 'mediu
 const TYPE_NAMES = { tfng: 'True / False / Not Given', ynng: 'Yes / No / Not Given', mcq: 'Multiple choice', multi: 'Choose several', matching: 'Matching', completion: 'Completion' };
 
 // ---------- theme ----------
-const THEMES = ['light', 'sepia', 'dark'];
+const THEMES = [null, 'light', 'sepia', 'dark'];
+const THEME_NAMES = { null: 'Auto', light: 'Light', sepia: 'Sepia', dark: 'Dark' };
 function applyTheme() {
-  document.documentElement.dataset.theme = prefs.get('theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const t = prefs.get('theme', null);
+  if (t && THEMES.includes(t)) document.documentElement.dataset.rlTheme = t;
+  else delete document.documentElement.dataset.rlTheme;
+  for (const b of $$('[data-theme-btn]')) b.textContent = 'Theme: ' + THEME_NAMES[t ?? null];
 }
 function cycleTheme() {
-  const cur = document.documentElement.dataset.theme;
-  prefs.set('theme', THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length]);
+  const cur = prefs.get('theme', null);
+  prefs.set('theme', THEMES[(Math.max(0, THEMES.indexOf(cur)) + 1) % THEMES.length]);
   applyTheme();
 }
 applyTheme();
@@ -39,7 +43,7 @@ function toast(text, ms = 3500) {
 }
 
 // buttons: [{ label, value, kind }] -> resolves with the chosen value (null on Escape)
-function dialog(title, bodyHTML, buttons) {
+function dialog(title, bodyHTML, buttons, read) {
   return new Promise((resolve) => {
     const ov = document.createElement('div');
     ov.className = 'overlay';
@@ -53,7 +57,9 @@ function dialog(title, bodyHTML, buttons) {
     const onKey = (e) => e.key === 'Escape' && done(null);
     ov.addEventListener('click', (e) => {
       const b = e.target.closest('[data-i]');
-      if (b) done(buttons[+b.dataset.i].value);
+      if (!b) return;
+      const v = buttons[+b.dataset.i].value;
+      done(v === true && read ? read() : v);
     });
     document.addEventListener('keydown', onKey);
     document.body.append(ov);
@@ -74,7 +80,15 @@ let leaveExam = null; // set while a timed test is on screen
 
 async function route() {
   if (leaveExam) leaveExam();
-  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  try {
+    await routeTo();
+  } finally {
+    applyTheme();
+  }
+}
+
+async function routeTo() {
+  const parts = location.hash.replace(/^#\/?/, '').split(/[/-]/).filter(Boolean);
   try {
     if (parts[0] === 'book' && parts[2] === 'test') return await setupView(parts[1], +parts[3]);
     if (parts[0] === 'book' && parts[2] === 'key') return await keyView(parts[1]);
@@ -84,7 +98,7 @@ async function route() {
     return await homeView();
   } catch (err) {
     console.error(err);
-    app.innerHTML = `<div class="page"><div class="notice">Something went wrong: ${esc(err.message)}</div><a class="btn" href="#/">Back to the library</a></div>`;
+    app.innerHTML = `<div class="page"><div class="notice">Something went wrong: ${esc(err?.message || 'this browser is blocking storage for the page')}</div><a class="btn" href="#home">Back to the library</a></div>`;
   }
 }
 const go = (hash) => {
@@ -93,7 +107,7 @@ const go = (hash) => {
 };
 window.addEventListener('hashchange', route);
 
-const header = (extra = '') => `<div class="top"><a class="brand" href="#/" style="text-decoration:none;color:inherit"><i>R</i>Reading Lab</a><span class="spacer"></span>${extra}<button class="btn small" data-theme-btn>Theme</button></div>`;
+const header = (extra = '') => `<div class="top"><a class="brand" href="#home" style="text-decoration:none;color:inherit"><i>R</i>Reading Lab</a><span class="spacer"></span>${extra}<button class="btn small" data-theme-btn>Theme</button></div>`;
 app.addEventListener('click', (e) => {
   if (e.target.closest('[data-theme-btn]')) cycleTheme();
 });
@@ -107,7 +121,7 @@ async function homeView() {
 
   app.innerHTML = `<div class="page">
     ${header()}
-    ${session ? `<div class="banner row"><div><b>Test in progress</b> — ${esc(session.bookTitle)}, Test ${session.testNum} (${clock(session.elapsed)} elapsed)</div><span class="spacer"></span><button class="btn" data-discard>Discard</button><a class="btn primary" href="#/exam">Resume</a></div>` : ''}
+    ${session ? `<div class="banner row"><div><b>Test in progress</b> — ${esc(session.bookTitle)}, Test ${session.testNum} (${clock(session.elapsed)} elapsed)</div><span class="spacer"></span><button class="btn" data-discard>Discard</button><a class="btn primary" href="#exam">Resume</a></div>` : ''}
     <div class="drop" id="drop">
       <strong>Add a practice-test book</strong>
       <div class="muted">Drop the PDF here (all parts at once if the book is split across files), or</div>
@@ -122,7 +136,7 @@ async function homeView() {
       <table class="list" style="margin-top:10px"><thead><tr><th>Date</th><th>Test</th><th>Passages</th><th>Score</th><th>Band</th><th>Time</th><th></th></tr></thead><tbody>
       ${attempts.slice(0, 50).map((a) => `<tr><td>${fmtDate(a.submittedAt)}</td><td>${esc(a.bookTitle)} · Test ${a.testNum}</td><td>${a.passages.join(', ')}</td>
         <td class="num">${a.raw}/${a.total}</td><td class="num"><b>${a.band.toFixed(1)}</b>${a.total !== 40 ? ' <span class="muted">est.</span>' : ''}</td><td class="num">${clock(a.elapsed)}</td>
-        <td style="text-align:right"><a class="btn small" href="#/attempt/${a.id}">Open</a> <button class="btn small ghost danger" data-del-attempt="${a.id}" aria-label="Delete attempt">✕</button></td></tr>`).join('')}
+        <td style="text-align:right"><a class="btn small" href="#attempt-${a.id}">Open</a> <button class="btn small ghost danger" data-del-attempt="${a.id}" aria-label="Delete attempt">✕</button></td></tr>`).join('')}
       </tbody></table></div>` : ''}
   </div>`;
 
@@ -157,9 +171,10 @@ async function homeView() {
       homeView();
     } else if (t.dataset.rename) {
       const book = books.find((b) => b.id === t.dataset.rename);
-      const name = prompt('Book title', book.title);
-      if (name && name.trim()) {
-        book.title = name.trim();
+      const typed = await dialog('Rename book', `<label class="field"><span>Title</span><input type="text" id="rename" value="${esc(book.title)}"></label>`, [{ label: 'Cancel', value: false }, { label: 'Save', value: true, kind: 'primary' }], () => $('#rename').value);
+      const name = typed && typed.trim();
+      if (name) {
+        book.title = name;
         await db.put('books', book);
         homeView();
       }
@@ -174,10 +189,10 @@ function bookCard(book) {
   return `<div class="card">
     <div class="row"><h2>${esc(book.title)}</h2><span class="spacer"></span>
       <button class="btn small ghost" data-rename="${book.id}">Rename</button>
-      <a class="btn small ghost" href="#/book/${book.id}/key">Answer key</a>
-      <button class="btn small ghost" data-export="${book.id}">Export</button>
+      <a class="btn small ghost" href="#book-${book.id}-key">Answer key</a>
+      ${window.RL_NO_DOWNLOAD ? '' : `<button class="btn small ghost" data-export="${book.id}">Export</button>`}
       <button class="btn small ghost danger" data-del-book="${book.id}">Remove</button></div>
-    <div class="tests">${book.tests.map((t) => `<a class="test-tile" href="#/book/${book.id}/test/${t.num}" style="text-decoration:none;color:inherit">
+    <div class="tests">${book.tests.map((t) => `<a class="test-tile" href="#book-${book.id}-test-${t.num}" style="text-decoration:none;color:inherit">
       <b>Test ${t.num}</b>${t.passages.map((p) => `<span>${p.num}. ${esc(p.title || 'Passage ' + p.num)}</span>`).join('')}</a>`).join('')}</div>
   </div>`;
 }
@@ -225,7 +240,7 @@ function importReview(draft) {
           <td>${p.groups.map((g) => `${g.from === g.to ? g.from : g.from + '–' + g.to} <span class="muted">${TYPE_NAMES[g.type]}${g.incomplete ? ' ⚠' : ''}</span>`).join('<br>')}</td></tr>`).join('')}
         </tbody></table></div>`;
     }).join('')}
-    <div class="row"><span class="spacer"></span><a class="btn" href="#/">Cancel</a>${nTests ? '<button class="btn primary" id="save">Save to library</button>' : ''}</div>
+    <div class="row"><span class="spacer"></span><a class="btn" href="#home">Cancel</a>${nTests ? '<button class="btn primary" id="save">Save to library</button>' : ''}</div>
   </div>`;
   const save = $('#save');
   if (save) save.onclick = async () => {
@@ -234,26 +249,26 @@ function importReview(draft) {
     await db.put('books', book);
     for (const [i, blob] of draft.blobs.entries()) await db.put('files', blob, `${book.id}:${i}`);
     toast('Saved to your library.');
-    go('#/');
+    go('#home');
   };
 }
 
 // ---------- answer key editor ----------
 async function keyView(bookId) {
   const book = await db.get('books', bookId);
-  if (!book) return go('#/');
+  if (!book) return go('#home');
   app.innerHTML = `<div class="page">${header()}
     <h1 style="font:700 26px var(--serif)">Answer key</h1>
     <p class="lede">${esc(book.title)}. Separate alternative answers with “/”. Put optional words in brackets, e.g. <code>(the) river</code>.</p>
     ${book.tests.map((t) => `<div class="card"><h2>Test ${t.num}</h2><div class="answer-grid">
       ${t.passages.flatMap((p) => p.groups.flatMap((g) => g.nums)).map((n) => `<label class="row" style="flex-wrap:nowrap"><b class="num" style="width:2em;text-align:right">${n}</b><input type="text" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:6px;padding:3px 8px;background:var(--bg)" data-t="${t.num}" data-n="${n}" value="${esc(t.key.answers[n] ?? '')}"></label>`).join('')}
       </div>${t.key.either.length ? `<p class="small muted">Accepted in either order: ${t.key.either.map((e) => e.join(' & ')).join('; ')}</p>` : ''}</div>`).join('')}
-    <div class="row"><span class="spacer"></span><a class="btn" href="#/">Cancel</a><button class="btn primary" id="save">Save answer key</button></div></div>`;
+    <div class="row"><span class="spacer"></span><a class="btn" href="#home">Cancel</a><button class="btn primary" id="save">Save answer key</button></div></div>`;
   $('#save').onclick = async () => {
     for (const input of $$('input[data-n]')) book.tests.find((t) => t.num === +input.dataset.t).key.answers[+input.dataset.n] = input.value.trim();
     await db.put('books', book);
     toast('Answer key saved.');
-    go('#/');
+    go('#home');
   };
 }
 
@@ -261,7 +276,7 @@ async function keyView(bookId) {
 async function setupView(bookId, testNum) {
   const book = await db.get('books', bookId);
   const test = book?.tests.find((t) => t.num === testNum);
-  if (!test) return go('#/');
+  if (!test) return go('#home');
   const cfg = { timer: 'exam', minutes: 20, onEnd: 'submit', pause: true, warn: true, ...prefs.get('config', {}) };
   app.innerHTML = `<div class="page">${header()}
     <h1 style="font:700 26px var(--serif)">${esc(book.title)} · Test ${test.num}</h1>
@@ -284,7 +299,7 @@ async function setupView(bookId, testNum) {
         <label class="opt"><input type="checkbox" id="warn"><span><b>Time warnings</b><small>A reminder at 10 and 5 minutes left.</small></span></label>
       </div>
     </div>
-    <div class="row"><span class="spacer"></span><a class="btn" href="#/">Back</a><button class="btn primary" id="start">Start test</button></div></div>`;
+    <div class="row"><span class="spacer"></span><a class="btn" href="#home">Back</a><button class="btn primary" id="start">Start test</button></div></div>`;
 
   $(`input[name=timer][value=${cfg.timer}]`).checked = true;
   $(`input[name=onEnd][value=${cfg.onEnd}]`).checked = true;
@@ -323,7 +338,7 @@ async function setupView(bookId, testNum) {
     const passages = chosen();
     const limit = config.timer === 'exam' ? passages.length * 20 * 60 : config.timer === 'custom' ? config.minutes * 60 : null;
     prefs.set('session', { bookId: book.id, bookTitle: book.title, testNum: test.num, passages, config, limit, answers: {}, flags: [], elapsed: 0, startedAt: Date.now() });
-    go('#/exam');
+    go('#exam');
   };
 }
 
@@ -642,12 +657,12 @@ const TOOLS = `<button class="btn small" data-fs="-1" aria-label="Smaller text">
 // ---------- live test ----------
 async function resumeExam() {
   const session = prefs.get('session', null);
-  if (!session) return go('#/');
+  if (!session) return go('#home');
   const book = await db.get('books', session.bookId);
   const test = book?.tests.find((t) => t.num === session.testNum);
   if (!test) {
     prefs.set('session', null);
-    return go('#/');
+    return go('#home');
   }
   const { config, limit } = session;
   const timed = config.timer !== 'none';
@@ -720,7 +735,7 @@ async function resumeExam() {
     await db.put('attempts', attempt);
     prefs.set('session', null);
     if (auto) toast('Time is up — your answers were submitted.');
-    go(`#/attempt/${attempt.id}`);
+    go(`#attempt-${attempt.id}`);
   }
 
   if (timerEl) timerEl.onclick = () => ((hidden = !hidden), tick());
@@ -741,7 +756,7 @@ async function resumeExam() {
       finished = true;
       prefs.set('session', null);
     }
-    go('#/');
+    go('#home');
   };
   const pauseBtn = $('#pause');
   if (pauseBtn) pauseBtn.onclick = async () => {
@@ -766,7 +781,7 @@ async function loadAttempt(id) {
 
 async function resultsView(id) {
   const { attempt, book, test } = await loadAttempt(id);
-  if (!attempt) return go('#/');
+  if (!attempt) return go('#home');
   const result = test ? mark(test, attempt.passages, attempt.answers) : null;
   if (result && (result.raw !== attempt.raw || result.total !== attempt.total)) {
     Object.assign(attempt, { raw: result.raw, total: result.total, band: result.band }); // the answer key was edited since
@@ -784,7 +799,7 @@ async function resultsView(id) {
       <div class="stat"><small>Time used</small><b>${clock(attempt.elapsed)}</b>${attempt.limit ? `<div class="small muted">of ${clock(attempt.limit)}</div>` : ''}</div>
     </div>
     ${est ? `<p class="small muted">Band estimated by scaling ${attempt.raw}/${attempt.total} to a full 40-question paper (${result ? result.scaled : Math.round((attempt.raw / attempt.total) * 40)}/40). A full three-passage test gives a truer figure.</p>` : ''}
-    <div class="row" style="margin:14px 0 20px">${test ? `<a class="btn primary" href="#/attempt/${attempt.id}/review">Review answers in the test</a><a class="btn" href="#/book/${attempt.bookId}/test/${attempt.testNum}">Try again</a>` : ''}<a class="btn" href="#/">Library</a></div>
+    <div class="row" style="margin:14px 0 20px">${test ? `<a class="btn primary" href="#attempt-${attempt.id}-review">Review answers in the test</a><a class="btn" href="#book-${attempt.bookId}-test-${attempt.testNum}">Try again</a>` : ''}<a class="btn" href="#home">Library</a></div>
     ${result ? `<div class="card"><h2>By passage</h2><table class="list" style="margin-top:8px"><tbody>
       ${result.perPassage.map((p) => `<tr><td><b>Passage ${p.num}</b> — ${esc(p.title)}</td><td class="num" style="text-align:right">${p.raw} / ${p.total}</td></tr>`).join('')}</tbody></table></div>
     <div class="card"><h2>Answers</h2><table class="list" style="margin-top:8px"><thead><tr><th>#</th><th>Your answer</th><th>Correct answer</th><th></th></tr></thead><tbody>
@@ -802,11 +817,11 @@ async function resultsView(id) {
 
 async function reviewView(id) {
   const { attempt, book, test } = await loadAttempt(id);
-  if (!attempt || !test) return go('#/');
+  if (!attempt || !test) return go('#home');
   const result = mark(test, attempt.passages, attempt.answers);
   const view = mountExam({
     book, test, passages: attempt.passages, answers: { ...attempt.answers }, flags: attempt.flags || [], review: { detail: result.detail },
-    barHTML: `<a class="btn small" href="#/attempt/${attempt.id}">Back to results</a><span class="title">Review · ${esc(book.title)} · Test ${test.num}</span><span class="spacer"></span>
+    barHTML: `<a class="btn small" href="#attempt-${attempt.id}">Back to results</a><span class="title">Review · ${esc(book.title)} · Test ${test.num}</span><span class="spacer"></span>
       <span class="pill ok">${result.raw} correct</span><span class="pill bad">${result.total - result.raw} wrong or blank</span>${TOOLS}`,
   });
   leaveExam = () => {
